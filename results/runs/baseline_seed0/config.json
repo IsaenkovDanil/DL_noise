@@ -1,0 +1,11 @@
+{
+  "epochs": 30,
+  "batch_size": 256,
+  "lr": 0.1,
+  "weight_decay": 0.0005,
+  "seed": 0,
+  "limit_train": 0,
+  "data_dir": "data",
+  "out": "results/runs/baseline_seed0",
+  "device": "cuda"
+}

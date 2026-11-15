@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -39,7 +40,20 @@ def split_indices(n_total):
     return perm[VAL_SIZE:], perm[:VAL_SIZE]
 
 
+def find_cifar_root(root):
+    if (Path(root) / "cifar-10-batches-py").is_dir():
+        return root
+    kaggle = Path("/kaggle/input")
+    if kaggle.is_dir():
+        for found in kaggle.rglob("cifar-10-batches-py"):
+            if (found / "data_batch_1").exists():
+                return str(found.parent)
+    return root
+
+
 def load_cifar10(root, device):
+    root = find_cifar_root(root)
+    print("CIFAR-10 root:", root)
     train = torchvision.datasets.CIFAR10(root=root, train=True, download=True)
     test = torchvision.datasets.CIFAR10(root=root, train=False, download=True)
     x_all = torch.from_numpy(train.data).permute(0, 3, 1, 2).contiguous()

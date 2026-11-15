@@ -3,11 +3,13 @@ import json
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 
-from common import augment, evaluate, get_device, load_cifar10, make_model, set_seed
+from common import augment, evaluate, get_device, load_cifar10, make_model, predict, set_seed
+from noise import make_noisy_labels
 
 
 def parse_args():
@@ -17,10 +19,33 @@ def parse_args():
     p.add_argument("--lr", type=float, default=0.1)
     p.add_argument("--weight-decay", type=float, default=5e-4)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--noise-type", choices=["none", "sym", "asym"], default="none")
+    p.add_argument("--noise-rate", type=float, default=0.0)
     p.add_argument("--limit-train", type=int, default=0)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="results/runs/baseline_seed0")
     return p.parse_args()
+
+
+def add_noise(data, args):
+    y_train_true = data["train_y"].cpu().numpy()
+    y_val_true = data["val_y"].cpu().numpy()
+    y_train_noisy = make_noisy_labels(y_train_true, args.noise_type, args.noise_rate, 10, 1000 + args.seed)
+    y_val_noisy = make_noisy_labels(y_val_true, args.noise_type, args.noise_rate, 10, 2000 + args.seed)
+    return y_train_true, y_train_noisy, y_val_noisy
+
+
+def train_fit_stats(model, x, y_true, y_noisy, is_noisy, device):
+    pred = predict(model, x, device).argmax(1)
+    clean = ~is_noisy
+    stats = {"train_clean_acc": (pred[clean] == y_true[clean]).float().mean().item()}
+    if is_noisy.any():
+        stats["noisy_memorized"] = (pred[is_noisy] == y_noisy[is_noisy]).float().mean().item()
+        stats["noisy_true_pred"] = (pred[is_noisy] == y_true[is_noisy]).float().mean().item()
+    else:
+        stats["noisy_memorized"] = float("nan")
+        stats["noisy_true_pred"] = float("nan")
+    return stats
 
 
 def main():
@@ -29,15 +54,26 @@ def main():
     set_seed(args.seed)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "config.json").write_text(json.dumps(vars(args) | {"device": device}, indent=2))
 
     data = load_cifar10(args.data_dir, device)
-    x_train, y_train = data["train_x"], data["train_y"]
+    y_train_true, y_train_noisy, y_val_noisy = add_noise(data, args)
+    np.savez(out / "labels.npz", train_idx=data["train_idx"].cpu().numpy(),
+             y_true=y_train_true, y_noisy=y_train_noisy)
+    actual_rate = float((y_train_true != y_train_noisy).mean())
+    (out / "config.json").write_text(json.dumps(
+        vars(args) | {"device": device, "actual_noise_rate": actual_rate}, indent=2))
+
+    x_train = data["train_x"]
+    y_true = data["train_y"]
+    y_train = torch.from_numpy(y_train_noisy).to(device)
+    val_noisy = torch.from_numpy(y_val_noisy).to(device)
     if args.limit_train:
-        x_train, y_train = x_train[:args.limit_train], y_train[:args.limit_train]
+        x_train, y_true, y_train = (t[:args.limit_train] for t in (x_train, y_true, y_train))
+    is_noisy = y_train != y_true
     n = x_train.size(0)
     steps_per_epoch = (n + args.batch_size - 1) // args.batch_size
-    print(f"device={device} train={n} val={data['val_y'].numel()} test={data['test_y'].numel()}")
+    print(f"device={device} train={n} noise={args.noise_type}:{args.noise_rate} "
+          f"actual={is_noisy.float().mean().item():.3f}")
 
     model = make_model(10).to(device).to(memory_format=torch.channels_last)
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
@@ -69,25 +105,40 @@ def main():
             loss_sum += loss.item() * yb.numel()
             correct += (logits.argmax(1) == yb).sum().item()
 
-        val_loss, val_acc = evaluate(model, data["val_x"], data["val_y"], device)
+        val_logits = predict(model, data["val_x"], device)
         test_loss, test_acc = evaluate(model, data["test_x"], data["test_y"], device)
         row = {
             "epoch": epoch,
             "lr": scheduler.get_last_lr()[0],
             "train_loss": loss_sum / n,
             "train_acc": correct / n,
-            "val_loss": val_loss,
-            "val_acc": val_acc,
+            "val_loss": F.cross_entropy(val_logits, data["val_y"]).item(),
+            "val_acc": (val_logits.argmax(1) == data["val_y"]).float().mean().item(),
+            "val_noisy_loss": F.cross_entropy(val_logits, val_noisy).item(),
+            "val_noisy_acc": (val_logits.argmax(1) == val_noisy).float().mean().item(),
             "test_loss": test_loss,
             "test_acc": test_acc,
-            "sec": time.time() - t0,
         }
+        row |= train_fit_stats(model, x_train, y_true, y_train, is_noisy, device)
+        row["sec"] = time.time() - t0
         log.append(row)
         pd.DataFrame(log).to_csv(out / "log.csv", index=False)
-        print(f"ep {epoch:3d} | train {row['train_acc']:.3f} | val {val_acc:.3f} | "
-              f"test {test_acc:.3f} | {row['sec']:.0f}s", flush=True)
+        print(f"ep {epoch:3d} | train {row['train_acc']:.3f} | clean-fit {row['train_clean_acc']:.3f} | "
+              f"noisy-memo {row['noisy_memorized']:.3f} | val {row['val_acc']:.3f} | "
+              f"val-noisy {row['val_noisy_acc']:.3f} | test {test_acc:.3f} | {row['sec']:.0f}s", flush=True)
 
-    summary = {"final_test_acc": log[-1]["test_acc"], "final_val_acc": log[-1]["val_acc"]}
+    df = pd.DataFrame(log)
+    best_clean = df.loc[df.val_acc.idxmax()]
+    best_noisy = df.loc[df.val_noisy_acc.idxmax()]
+    summary = {
+        "final_test_acc": float(df.test_acc.iloc[-1]),
+        "best_test_acc_oracle": float(df.test_acc.max()),
+        "es_clean_val_epoch": int(best_clean.epoch),
+        "es_clean_val_test_acc": float(best_clean.test_acc),
+        "es_noisy_val_epoch": int(best_noisy.epoch),
+        "es_noisy_val_test_acc": float(best_noisy.test_acc),
+        "final_noisy_memorized": float(df.noisy_memorized.iloc[-1]),
+    }
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
     print(summary)
 
