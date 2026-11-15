@@ -1,0 +1,14 @@
+{
+  "epochs": 30,
+  "batch_size": 256,
+  "lr": 0.1,
+  "weight_decay": 0.0005,
+  "seed": 0,
+  "noise_type": "sym",
+  "noise_rate": 0.0,
+  "limit_train": 0,
+  "data_dir": "data",
+  "out": "results/runs/sym0.0_seed0",
+  "device": "cuda",
+  "actual_noise_rate": 0.0
+}

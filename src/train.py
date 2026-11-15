@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from common import augment, evaluate, get_device, load_cifar10, make_model, predict, set_seed
+from losses import make_loss_fn
 from noise import make_noisy_labels
 
 
@@ -21,6 +22,11 @@ def parse_args():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--noise-type", choices=["none", "sym", "asym"], default="none")
     p.add_argument("--noise-rate", type=float, default=0.0)
+    p.add_argument("--method", choices=["ce", "ls", "mixup", "sce"], default="ce")
+    p.add_argument("--ls-eps", type=float, default=0.1)
+    p.add_argument("--mixup-alpha", type=float, default=1.0)
+    p.add_argument("--sce-alpha", type=float, default=0.1)
+    p.add_argument("--sce-beta", type=float, default=1.0)
     p.add_argument("--limit-train", type=int, default=0)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="results/runs/baseline_seed0")
@@ -72,7 +78,7 @@ def main():
     is_noisy = y_train != y_true
     n = x_train.size(0)
     steps_per_epoch = (n + args.batch_size - 1) // args.batch_size
-    print(f"device={device} train={n} noise={args.noise_type}:{args.noise_rate} "
+    print(f"device={device} train={n} method={args.method} noise={args.noise_type}:{args.noise_rate} "
           f"actual={is_noisy.float().mean().item():.3f}")
 
     model = make_model(10).to(device).to(memory_format=torch.channels_last)
@@ -83,6 +89,7 @@ def main():
         pct_start=0.15, anneal_strategy="linear")
     use_amp = device != "cpu"
     scaler = torch.amp.GradScaler(device, enabled=device == "cuda")
+    loss_fn = make_loss_fn(args)
 
     log = []
     for epoch in range(1, args.epochs + 1):
@@ -94,9 +101,17 @@ def main():
             idx = perm[s * args.batch_size:(s + 1) * args.batch_size]
             xb = augment(x_train[idx]).to(memory_format=torch.channels_last)
             yb = y_train[idx]
+            if args.method == "mixup":
+                lam = float(np.random.beta(args.mixup_alpha, args.mixup_alpha))
+                partner = torch.randperm(yb.numel(), device=device)
+                xb = lam * xb + (1 - lam) * xb[partner]
+                yb_partner = yb[partner]
             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
                 logits = model(xb)
-                loss = F.cross_entropy(logits, yb)
+                if args.method == "mixup":
+                    loss = lam * F.cross_entropy(logits, yb) + (1 - lam) * F.cross_entropy(logits, yb_partner)
+                else:
+                    loss = loss_fn(logits, yb)
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
