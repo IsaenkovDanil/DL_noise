@@ -1,0 +1,9 @@
+{
+  "final_test_acc": 0.8037999868392944,
+  "best_test_acc_oracle": 0.8093000054359436,
+  "es_clean_val_epoch": 22,
+  "es_clean_val_test_acc": 0.8025999665260315,
+  "es_noisy_val_epoch": 28,
+  "es_noisy_val_test_acc": 0.8068000078201294,
+  "final_noisy_memorized": 0.13655555248260498
+}

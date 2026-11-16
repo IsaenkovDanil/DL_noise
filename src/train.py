@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 
+from filtering import keep_mask
 from common import augment, evaluate, get_device, load_cifar10, make_model, predict, set_seed
 from losses import make_loss_fn
 from noise import make_noisy_labels
@@ -27,6 +28,11 @@ def parse_args():
     p.add_argument("--mixup-alpha", type=float, default=1.0)
     p.add_argument("--sce-alpha", type=float, default=0.1)
     p.add_argument("--sce-beta", type=float, default=1.0)
+    p.add_argument("--save-train-loss", action="store_true")
+    p.add_argument("--filter-from", default="")
+    p.add_argument("--filter-epoch", type=int, default=10)
+    p.add_argument("--drop-frac", type=float, default=0.4)
+    p.add_argument("--filter-oracle", action="store_true")
     p.add_argument("--limit-train", type=int, default=0)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="results/runs/baseline_seed0")
@@ -42,7 +48,9 @@ def add_noise(data, args):
 
 
 def train_fit_stats(model, x, y_true, y_noisy, is_noisy, device):
-    pred = predict(model, x, device).argmax(1)
+    logits = predict(model, x, device)
+    pred = logits.argmax(1)
+    per_sample_loss = F.cross_entropy(logits, y_noisy, reduction="none")
     clean = ~is_noisy
     stats = {"train_clean_acc": (pred[clean] == y_true[clean]).float().mean().item()}
     if is_noisy.any():
@@ -51,7 +59,7 @@ def train_fit_stats(model, x, y_true, y_noisy, is_noisy, device):
     else:
         stats["noisy_memorized"] = float("nan")
         stats["noisy_true_pred"] = float("nan")
-    return stats
+    return stats, per_sample_loss
 
 
 def main():
@@ -63,16 +71,24 @@ def main():
 
     data = load_cifar10(args.data_dir, device)
     y_train_true, y_train_noisy, y_val_noisy = add_noise(data, args)
+    keep = np.ones(len(y_train_true), dtype=bool)
+    filter_stats = {}
+    if args.filter_from:
+        y_train_noisy, keep, filter_stats = keep_mask(args.filter_from, args.filter_epoch,
+                                                      args.drop_frac, args.filter_oracle)
+        print("filter:", filter_stats)
     np.savez(out / "labels.npz", train_idx=data["train_idx"].cpu().numpy(),
-             y_true=y_train_true, y_noisy=y_train_noisy)
+             y_true=y_train_true, y_noisy=y_train_noisy, keep=keep)
     actual_rate = float((y_train_true != y_train_noisy).mean())
     (out / "config.json").write_text(json.dumps(
-        vars(args) | {"device": device, "actual_noise_rate": actual_rate}, indent=2))
+        vars(args) | {"device": device, "actual_noise_rate": actual_rate, "filter": filter_stats}, indent=2))
 
     x_train = data["train_x"]
     y_true = data["train_y"]
     y_train = torch.from_numpy(y_train_noisy).to(device)
     val_noisy = torch.from_numpy(y_val_noisy).to(device)
+    keep_t = torch.from_numpy(keep).to(device)
+    x_train, y_true, y_train = x_train[keep_t], y_true[keep_t], y_train[keep_t]
     if args.limit_train:
         x_train, y_true, y_train = (t[:args.limit_train] for t in (x_train, y_true, y_train))
     is_noisy = y_train != y_true
@@ -92,6 +108,7 @@ def main():
     loss_fn = make_loss_fn(args)
 
     log = []
+    train_losses = []
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
         model.train()
@@ -134,7 +151,11 @@ def main():
             "test_loss": test_loss,
             "test_acc": test_acc,
         }
-        row |= train_fit_stats(model, x_train, y_true, y_train, is_noisy, device)
+        stats, per_sample_loss = train_fit_stats(model, x_train, y_true, y_train, is_noisy, device)
+        row |= stats
+        if args.save_train_loss:
+            train_losses.append(per_sample_loss.cpu().numpy().astype(np.float16))
+            np.save(out / "train_losses.npy", np.stack(train_losses))
         row["sec"] = time.time() - t0
         log.append(row)
         pd.DataFrame(log).to_csv(out / "log.csv", index=False)

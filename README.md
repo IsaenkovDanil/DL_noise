@@ -24,6 +24,11 @@ CIFAR-10 is downloaded automatically to `data/` on the first run.
 | 3. Long run, CE sym 40%, 100 epochs | `bash scripts/stage3_long.sh` | `results/runs/long/` |
 | 3. Table and figure | `python src/summarize_methods.py` | `results/stage3_table.csv`, `results/stage3_methods.png` |
 
+| 4. Loss-based filtering: source run saving per-example loss, retrain after dropping top-loss examples (epoch 10: seeds 0,1,2; last epoch; oracle) | `bash scripts/stage4.sh` | `results/runs/stage4/` |
+| 4. Analysis | `python src/analyze_filtering.py` | `results/stage4_filtering.png`, `results/stage4_table.csv`, `results/stage4_pr_by_epoch_*.csv` |
+
+Filtering drops the known noise fraction (40% for sym, 20% for asym) with the largest cross-entropy w.r.t. the given label at the chosen epoch of a CE source run; retraining reuses the source run's noisy labels, only the model seed changes. Precision/recall of dropped examples and ROC AUC of the loss as a noise detector are computed against the true noise mask.
+
 Methods (hyperparameters from the original papers, not tuned): label smoothing ε=0.1; mixup α=1.0; symmetric cross-entropy α=0.1, β=1.0 (log 0 clipped at log 1e-4). Early stopping is evaluated post hoc from per-epoch logs: the epoch with the best clean-label validation accuracy and the epoch with the best noisy-label validation accuracy.
 
 Noise: symmetric flips exactly `rate` of training labels to a uniformly random other class; asymmetric flips `rate` of labels within classes truck→automobile, bird→airplane, deer→horse, cat↔dog. Validation labels get the same kind of noise (stored as `val_noisy_*` columns); test labels are always clean.
@@ -41,9 +46,8 @@ Notebook settings: Accelerator `GPU T4` or `GPU P100`, Internet `On`. Optionally
 !rm -rf DL_noise
 !git clone https://github.com/IsaenkovDanil/DL_noise.git
 %cd DL_noise
-!bash scripts/stage3.sh
-!bash scripts/stage3_long.sh
-!zip -r /kaggle/working/stage3_runs.zip results/runs/stage3 results/runs/long
+!bash scripts/stage4.sh
+!zip -r /kaggle/working/stage4_runs.zip results/runs/stage4
 ```
 
 Run with `Save Version → Save & Run All (Commit)` so that results in `/kaggle/working` are kept in the version Output.
@@ -61,6 +65,9 @@ src/summarize_methods.py  stage 3 table (mean ± std over seeds) and figure
 scripts/stage2.sh    stage 2 noise sweep
 scripts/stage3.sh    stage 3 methods sweep
 scripts/stage3_long.sh  stage 3 long run
+src/filtering.py     loss-based selection, precision/recall, ROC AUC
+src/analyze_filtering.py  stage 4 analysis and figure
+scripts/stage4.sh    stage 4 filtering and retraining
 src/look_at_data.py  dataset overview figure
 src/benchmark.py     speed check
 results/             figures and run logs

@@ -66,6 +66,24 @@ def main():
     plt.tight_layout()
     plt.savefig(Path(args.out_dir) / "stage3_methods.png", dpi=120)
 
+    fig, axes = plt.subplots(2, len(noises), figsize=(7 * len(noises), 7), squeeze=False)
+    for col, noise in enumerate(noises):
+        for method in METHOD_ORDER:
+            logs = [pd.read_csv(d / "log.csv") for d in Path(args.runs).glob(f"{method}_{noise}_seed*")]
+            if not logs:
+                continue
+            mean = pd.concat(logs).groupby("epoch").mean(numeric_only=True)
+            axes[0][col].plot(mean.index, mean.test_acc * 100, label=method)
+            axes[1][col].plot(mean.index, mean.noisy_memorized * 100, label=method)
+        axes[0][col].set_title(f"{noise}: test accuracy, % (mean over seeds)")
+        axes[1][col].set_title(f"{noise}: noisy train examples fitted to wrong label, %")
+        for ax in axes[:, col]:
+            ax.set_xlabel("epoch")
+            ax.grid(alpha=0.3)
+            ax.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig(Path(args.out_dir) / "stage3_curves.png", dpi=120)
+
 
 if __name__ == "__main__":
     main()
