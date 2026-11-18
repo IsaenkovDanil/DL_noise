@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from common import noise_name
 from filtering import auc, drop_by_loss, load_source, precision_recall
 
 
@@ -24,14 +25,18 @@ def retrain_table(runs_dir, baseline_dir):
     for d in sorted(Path(runs_dir).glob("filtered_*")):
         cfg = json.loads((d / "config.json").read_text())
         s = json.loads((d / "summary.json").read_text())
-        variant = "oracle" if cfg["filter_oracle"] else f"loss@epoch{cfg['filter_epoch']}"
-        rows.append({"noise": f"{cfg['noise_type']}0.4", "variant": variant, "seed": cfg["seed"],
+        if cfg["filter_oracle"]:
+            variant = "oracle"
+        else:
+            per_class = " per-class" if cfg.get("filter_per_class") else ""
+            variant = f"loss@epoch{cfg['filter_epoch']}{per_class}"
+        rows.append({"noise": noise_name(cfg), "variant": variant, "seed": cfg["seed"],
                      "precision": cfg["filter"]["precision"], "recall": cfg["filter"]["recall"],
                      "noise_left": cfg["filter"]["noise_left"], "test": s["final_test_acc"]})
-    for d in sorted(Path(baseline_dir).glob("ce_*0.4_seed*")):
+    for d in sorted(Path(baseline_dir).glob("ce_*_seed*")):
         cfg = json.loads((d / "config.json").read_text())
         s = json.loads((d / "summary.json").read_text())
-        rows.append({"noise": f"{cfg['noise_type']}0.4", "variant": "no filter (stage 3 ce)",
+        rows.append({"noise": noise_name(cfg), "variant": "no filter (ce)",
                      "seed": cfg["seed"], "precision": np.nan, "recall": np.nan,
                      "noise_left": cfg["actual_noise_rate"], "test": s["final_test_acc"]})
     df = pd.DataFrame(rows)
@@ -46,15 +51,19 @@ def main():
     p.add_argument("--runs", default="results/runs/stage4")
     p.add_argument("--baseline", default="results/runs/stage3")
     p.add_argument("--out-dir", default="results")
+    p.add_argument("--prefix", default="stage4")
     args = p.parse_args()
     runs = Path(args.runs)
-    sources = {"sym0.4": (runs / "source_sym0.4_seed0", 0.4), "asym0.4": (runs / "source_asym0.4_seed0", 0.2)}
-    sources = {k: v for k, v in sources.items() if (v[0] / "train_losses.npy").exists()}
+    sources = {}
+    for d in sorted(runs.glob("source_*")):
+        if (d / "train_losses.npy").exists():
+            cfg = json.loads((d / "config.json").read_text())
+            sources[noise_name(cfg)] = (d, round(cfg["actual_noise_rate"], 3))
 
     fig, axes = plt.subplots(2, len(sources), figsize=(6.5 * len(sources), 8), squeeze=False)
     for col, (name, (src, frac)) in enumerate(sources.items()):
         curves = epoch_curves(src, frac)
-        curves.to_csv(Path(args.out_dir) / f"stage4_pr_by_epoch_{name}.csv", index=False)
+        curves.to_csv(Path(args.out_dir) / f"{args.prefix}_pr_by_epoch_{name}.csv", index=False)
         ax = axes[0][col]
         ax.plot(curves.epoch, curves.precision, label="precision")
         ax.plot(curves.epoch, curves.recall, label="recall")
@@ -81,13 +90,13 @@ def main():
         print(name, "best AUC epoch:", int(curves.loc[curves.auc.idxmax(), "epoch"]),
               "AUC@10=%.3f AUC@last=%.3f" % (curves.auc.iloc[min(9, len(curves) - 1)], curves.auc.iloc[-1]))
     plt.tight_layout()
-    plt.savefig(Path(args.out_dir) / "stage4_filtering.png", dpi=120)
+    plt.savefig(Path(args.out_dir) / f"{args.prefix}_filtering.png", dpi=120)
 
     if list(runs.glob("filtered_*")):
         agg = retrain_table(runs, args.baseline)
         pd.set_option("display.width", 200)
         print((agg.drop(columns="n_seeds") * 100).round(2).join(agg.n_seeds))
-        agg.to_csv(Path(args.out_dir) / "stage4_table.csv")
+        agg.to_csv(Path(args.out_dir) / f"{args.prefix}_table.csv")
 
 
 if __name__ == "__main__":

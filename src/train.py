@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from filtering import keep_mask
 from common import augment, evaluate, get_device, load_cifar10, make_model, predict, set_seed
 from losses import make_loss_fn
-from noise import make_noisy_labels
+from noise import load_cifar10n, make_noisy_labels
 
 
 def parse_args():
@@ -21,8 +21,10 @@ def parse_args():
     p.add_argument("--lr", type=float, default=0.1)
     p.add_argument("--weight-decay", type=float, default=5e-4)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--noise-type", choices=["none", "sym", "asym"], default="none")
+    p.add_argument("--noise-type", choices=["none", "sym", "asym", "c10n"], default="none")
     p.add_argument("--noise-rate", type=float, default=0.0)
+    p.add_argument("--c10n-label", default="worse_label")
+    p.add_argument("--c10n-path", default="data/CIFAR-10_human.pt")
     p.add_argument("--method", choices=["ce", "ls", "mixup", "sce"], default="ce")
     p.add_argument("--ls-eps", type=float, default=0.1)
     p.add_argument("--mixup-alpha", type=float, default=1.0)
@@ -33,6 +35,7 @@ def parse_args():
     p.add_argument("--filter-epoch", type=int, default=10)
     p.add_argument("--drop-frac", type=float, default=0.4)
     p.add_argument("--filter-oracle", action="store_true")
+    p.add_argument("--filter-per-class", action="store_true")
     p.add_argument("--limit-train", type=int, default=0)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="results/runs/baseline_seed0")
@@ -42,6 +45,12 @@ def parse_args():
 def add_noise(data, args):
     y_train_true = data["train_y"].cpu().numpy()
     y_val_true = data["val_y"].cpu().numpy()
+    if args.noise_type == "c10n":
+        human = load_cifar10n(args.c10n_path)
+        train_idx, val_idx = data["train_idx"].cpu().numpy(), data["val_idx"].cpu().numpy()
+        assert (human["clean_label"][train_idx] == y_train_true).all()
+        assert (human["clean_label"][val_idx] == y_val_true).all()
+        return y_train_true, human[args.c10n_label][train_idx], human[args.c10n_label][val_idx]
     y_train_noisy = make_noisy_labels(y_train_true, args.noise_type, args.noise_rate, 10, 1000 + args.seed)
     y_val_noisy = make_noisy_labels(y_val_true, args.noise_type, args.noise_rate, 10, 2000 + args.seed)
     return y_train_true, y_train_noisy, y_val_noisy
@@ -75,7 +84,8 @@ def main():
     filter_stats = {}
     if args.filter_from:
         y_train_noisy, keep, filter_stats = keep_mask(args.filter_from, args.filter_epoch,
-                                                      args.drop_frac, args.filter_oracle)
+                                                      args.drop_frac, args.filter_oracle,
+                                                      args.filter_per_class)
         print("filter:", filter_stats)
     np.savez(out / "labels.npz", train_idx=data["train_idx"].cpu().numpy(),
              y_true=y_train_true, y_noisy=y_train_noisy, keep=keep)

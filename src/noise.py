@@ -1,4 +1,10 @@
+import urllib.request
+from pathlib import Path
+
 import numpy as np
+import torch
+
+CIFAR10N_URL = "https://github.com/UCSC-REAL/cifar-10-100n/raw/main/data/CIFAR-10_human.pt"
 
 ASYM_MAP_CIFAR10 = {9: 1, 2: 0, 4: 7, 3: 5, 5: 3}
 
@@ -32,3 +38,12 @@ def make_noisy_labels(y, kind, rate, num_classes, seed):
     if kind == "asym":
         return asymmetric_noise(y, rate, rng)
     raise ValueError(f"unknown noise type: {kind}")
+
+
+def load_cifar10n(path, url=CIFAR10N_URL):
+    path = Path(path)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, path)
+    raw = torch.load(path, weights_only=False)
+    return {k: np.asarray(v).astype(np.int64) for k, v in raw.items()}

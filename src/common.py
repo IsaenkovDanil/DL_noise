@@ -63,6 +63,7 @@ def load_cifar10(root, device):
         "train_x": x_all[train_idx],
         "train_y": y_all[train_idx],
         "train_idx": torch.from_numpy(train_idx),
+        "val_idx": torch.from_numpy(val_idx),
         "val_x": x_all[val_idx],
         "val_y": y_all[val_idx],
         "test_x": torch.from_numpy(test.data).permute(0, 3, 1, 2).contiguous(),
@@ -116,3 +117,9 @@ def evaluate(model, x_uint8, y, device):
     loss = F.cross_entropy(logits, y).item()
     acc = (logits.argmax(1) == y).float().mean().item()
     return loss, acc
+
+
+def noise_name(cfg):
+    if cfg.get("noise_type") == "c10n":
+        return "c10n-" + cfg["c10n_label"].replace("_label", "")
+    return f"{cfg.get('noise_type', 'none')}{cfg.get('noise_rate', 0.0)}"

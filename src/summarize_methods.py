@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from common import noise_name
+
 METRICS = {
     "final_test_acc": "last epoch",
     "es_clean_val_test_acc": "early stop: clean val",
@@ -24,7 +26,7 @@ def load(runs_dir):
         cfg = json.loads(cfg_path.read_text())
         summary = json.loads(sum_path.read_text())
         rows.append({"method": cfg.get("method", "ce"),
-                     "noise": f"{cfg['noise_type']}{cfg['noise_rate']}",
+                     "noise": noise_name(cfg),
                      "seed": cfg["seed"], **summary})
     return pd.DataFrame(rows)
 
@@ -33,6 +35,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--runs", default="results/runs/stage3")
     p.add_argument("--out-dir", default="results")
+    p.add_argument("--prefix", default="stage3")
     args = p.parse_args()
 
     df = load(args.runs)
@@ -43,7 +46,7 @@ def main():
     pretty = pretty.join(seeds)
     pd.set_option("display.width", 200)
     print(pretty)
-    pretty.to_csv(Path(args.out_dir) / "stage3_table.csv")
+    pretty.to_csv(Path(args.out_dir) / f"{args.prefix}_table.csv")
 
     noises = sorted(df.noise.unique())
     fig, axes = plt.subplots(1, len(noises), figsize=(7 * len(noises), 4.5), squeeze=False)
@@ -64,7 +67,7 @@ def main():
         ax.grid(axis="y", alpha=0.3)
     axes[0][0].legend(fontsize=8)
     plt.tight_layout()
-    plt.savefig(Path(args.out_dir) / "stage3_methods.png", dpi=120)
+    plt.savefig(Path(args.out_dir) / f"{args.prefix}_methods.png", dpi=120)
 
     fig, axes = plt.subplots(2, len(noises), figsize=(7 * len(noises), 7), squeeze=False)
     for col, noise in enumerate(noises):
@@ -82,7 +85,7 @@ def main():
             ax.grid(alpha=0.3)
             ax.legend(fontsize=8)
     plt.tight_layout()
-    plt.savefig(Path(args.out_dir) / "stage3_curves.png", dpi=120)
+    plt.savefig(Path(args.out_dir) / f"{args.prefix}_curves.png", dpi=120)
 
 
 if __name__ == "__main__":

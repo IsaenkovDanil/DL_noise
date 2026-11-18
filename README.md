@@ -27,6 +27,13 @@ CIFAR-10 is downloaded automatically to `data/` on the first run.
 | 4. Loss-based filtering: source run saving per-example loss, retrain after dropping top-loss examples (epoch 10: seeds 0,1,2; last epoch; oracle) | `bash scripts/stage4.sh` | `results/runs/stage4/` |
 | 4. Analysis | `python src/analyze_filtering.py` | `results/stage4_filtering.png`, `results/stage4_table.csv`, `results/stage4_pr_by_epoch_*.csv` |
 
+| 5. CIFAR-10N human labels (aggre, random1, worse); CE/mixup/SCE on worse × seeds 0,1,2; loss filtering on worse; per-class filtering for stage 4 | `bash scripts/stage5.sh` | `results/runs/stage5/`, `results/runs/stage4/filtered_e10pc_*` |
+| 5. Human vs synthetic noise, confusion matrices | `python src/analyze_c10n.py` | `results/stage5_vs_synthetic.*`, `results/stage5_confusion.png` |
+| 5. Methods on worse | `python src/summarize_methods.py --runs results/runs/stage5/methods --prefix stage5` | `results/stage5_table.csv`, `results/stage5_methods.png`, `results/stage5_curves.png` |
+| 5. Filtering on worse | `python src/analyze_filtering.py --runs results/runs/stage5/filter --baseline results/runs/stage5/methods --prefix stage5` | `results/stage5_filtering.png`, `results/stage5_table.csv` |
+
+CIFAR-10N labels are downloaded from the authors' repository (`UCSC-REAL/cifar-10-100n`, `CIFAR-10_human.pt`) into `data/` on first use; their `clean_label` is checked against torchvision labels. Validation uses the same human label set as training for the noisy-validation columns.
+
 Filtering drops the known noise fraction (40% for sym, 20% for asym) with the largest cross-entropy w.r.t. the given label at the chosen epoch of a CE source run; retraining reuses the source run's noisy labels, only the model seed changes. Precision/recall of dropped examples and ROC AUC of the loss as a noise detector are computed against the true noise mask.
 
 Methods (hyperparameters from the original papers, not tuned): label smoothing ε=0.1; mixup α=1.0; symmetric cross-entropy α=0.1, β=1.0 (log 0 clipped at log 1e-4). Early stopping is evaluated post hoc from per-epoch logs: the epoch with the best clean-label validation accuracy and the epoch with the best noisy-label validation accuracy.
@@ -46,8 +53,8 @@ Notebook settings: Accelerator `GPU T4` or `GPU P100`, Internet `On`. Optionally
 !rm -rf DL_noise
 !git clone https://github.com/IsaenkovDanil/DL_noise.git
 %cd DL_noise
-!bash scripts/stage4.sh
-!zip -r /kaggle/working/stage4_runs.zip results/runs/stage4
+!bash scripts/stage5.sh
+!zip -r /kaggle/working/stage5_runs.zip results/runs/stage5 results/runs/stage4/filtered_e10pc_*
 ```
 
 Run with `Save Version → Save & Run All (Commit)` so that results in `/kaggle/working` are kept in the version Output.
@@ -68,6 +75,8 @@ scripts/stage3_long.sh  stage 3 long run
 src/filtering.py     loss-based selection, precision/recall, ROC AUC
 src/analyze_filtering.py  stage 4 analysis and figure
 scripts/stage4.sh    stage 4 filtering and retraining
+src/analyze_c10n.py  stage 5 human vs synthetic noise
+scripts/stage5.sh    stage 5 CIFAR-10N runs
 src/look_at_data.py  dataset overview figure
 src/benchmark.py     speed check
 results/             figures and run logs

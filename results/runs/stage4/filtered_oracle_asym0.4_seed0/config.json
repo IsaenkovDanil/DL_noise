@@ -1,0 +1,30 @@
+{
+  "epochs": 30,
+  "batch_size": 256,
+  "lr": 0.1,
+  "weight_decay": 0.0005,
+  "seed": 0,
+  "noise_type": "asym",
+  "noise_rate": 0.4,
+  "method": "ce",
+  "ls_eps": 0.1,
+  "mixup_alpha": 1.0,
+  "sce_alpha": 0.1,
+  "sce_beta": 1.0,
+  "save_train_loss": false,
+  "filter_from": "results/runs/stage4/source_asym0.4_seed0",
+  "filter_epoch": 10,
+  "drop_frac": 0.4,
+  "filter_oracle": true,
+  "limit_train": 0,
+  "data_dir": "data",
+  "out": "results/runs/stage4/filtered_oracle_asym0.4_seed0",
+  "device": "cuda",
+  "actual_noise_rate": 0.19995555555555555,
+  "filter": {
+    "n_dropped": 8998,
+    "precision": 1.0,
+    "recall": 1.0,
+    "noise_left": 0.0
+  }
+}
