@@ -50,6 +50,8 @@ def add_noise(data, args):
         train_idx, val_idx = data["train_idx"].cpu().numpy(), data["val_idx"].cpu().numpy()
         assert (human["clean_label"][train_idx] == y_train_true).all()
         assert (human["clean_label"][val_idx] == y_val_true).all()
+        if args.c10n_label not in human:
+            raise KeyError(f"{args.c10n_label} not in CIFAR-10N file, available: {sorted(human)}")
         return y_train_true, human[args.c10n_label][train_idx], human[args.c10n_label][val_idx]
     y_train_noisy = make_noisy_labels(y_train_true, args.noise_type, args.noise_rate, 10, 1000 + args.seed)
     y_val_noisy = make_noisy_labels(y_val_true, args.noise_type, args.noise_rate, 10, 2000 + args.seed)
