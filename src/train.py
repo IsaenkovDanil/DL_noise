@@ -36,6 +36,7 @@ def parse_args():
     p.add_argument("--drop-frac", type=float, default=0.4)
     p.add_argument("--filter-oracle", action="store_true")
     p.add_argument("--filter-per-class", action="store_true")
+    p.add_argument("--filter-scores", default="")
     p.add_argument("--limit-train", type=int, default=0)
     p.add_argument("--data-dir", default="data")
     p.add_argument("--out", default="results/runs/baseline_seed0")
@@ -87,7 +88,7 @@ def main():
     if args.filter_from:
         y_train_noisy, keep, filter_stats = keep_mask(args.filter_from, args.filter_epoch,
                                                       args.drop_frac, args.filter_oracle,
-                                                      args.filter_per_class)
+                                                      args.filter_per_class, args.filter_scores)
         print("filter:", filter_stats)
     np.savez(out / "labels.npz", train_idx=data["train_idx"].cpu().numpy(),
              y_true=y_train_true, y_noisy=y_train_noisy, keep=keep)

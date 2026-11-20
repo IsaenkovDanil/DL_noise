@@ -1,0 +1,33 @@
+{
+  "epochs": 30,
+  "batch_size": 256,
+  "lr": 0.1,
+  "weight_decay": 0.0005,
+  "seed": 1,
+  "noise_type": "sym",
+  "noise_rate": 0.4,
+  "c10n_label": "worse_label",
+  "c10n_path": "data/CIFAR-10_human.pt",
+  "method": "ce",
+  "ls_eps": 0.1,
+  "mixup_alpha": 1.0,
+  "sce_alpha": 0.1,
+  "sce_beta": 1.0,
+  "save_train_loss": false,
+  "filter_from": "results/runs/stage4/source_sym0.4_seed0",
+  "filter_epoch": 10,
+  "drop_frac": 0.4,
+  "filter_oracle": false,
+  "filter_per_class": true,
+  "limit_train": 0,
+  "data_dir": "data",
+  "out": "results/runs/stage4/filtered_e10pc_sym0.4_seed1",
+  "device": "cuda",
+  "actual_noise_rate": 0.4,
+  "filter": {
+    "n_dropped": 18001,
+    "precision": 0.8810621632131548,
+    "recall": 0.8811111111111111,
+    "noise_left": 0.07926219489610727
+  }
+}

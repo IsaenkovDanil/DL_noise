@@ -25,7 +25,9 @@ def retrain_table(runs_dir, baseline_dir):
     for d in sorted(Path(runs_dir).glob("filtered_*")):
         cfg = json.loads((d / "config.json").read_text())
         s = json.loads((d / "summary.json").read_text())
-        if cfg["filter_oracle"]:
+        if cfg.get("filter_scores"):
+            variant = "CLIP+kNN score"
+        elif cfg["filter_oracle"]:
             variant = "oracle"
         else:
             per_class = " per-class" if cfg.get("filter_per_class") else ""
@@ -96,7 +98,7 @@ def main():
         agg = retrain_table(runs, args.baseline)
         pd.set_option("display.width", 200)
         print((agg.drop(columns="n_seeds") * 100).round(2).join(agg.n_seeds))
-        agg.to_csv(Path(args.out_dir) / f"{args.prefix}_table.csv")
+        agg.to_csv(Path(args.out_dir) / f"{args.prefix}_filtering_table.csv")
 
 
 if __name__ == "__main__":

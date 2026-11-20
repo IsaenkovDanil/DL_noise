@@ -25,12 +25,21 @@ CIFAR-10 is downloaded automatically to `data/` on the first run.
 | 3. Table and figure | `python src/summarize_methods.py` | `results/stage3_table.csv`, `results/stage3_methods.png` |
 
 | 4. Loss-based filtering: source run saving per-example loss, retrain after dropping top-loss examples (epoch 10: seeds 0,1,2; last epoch; oracle) | `bash scripts/stage4.sh` | `results/runs/stage4/` |
-| 4. Analysis | `python src/analyze_filtering.py` | `results/stage4_filtering.png`, `results/stage4_table.csv`, `results/stage4_pr_by_epoch_*.csv` |
+| 4. Analysis | `python src/analyze_filtering.py` | `results/stage4_filtering.png`, `results/stage4_filtering_table.csv`, `results/stage4_pr_by_epoch_*.csv` |
 
 | 5. CIFAR-10N human labels (aggre, random1, worse); CE/mixup/SCE on worse × seeds 0,1,2; loss filtering on worse; per-class filtering for stage 4 | `bash scripts/stage5.sh` | `results/runs/stage5/`, `results/runs/stage4/filtered_e10pc_*` |
 | 5. Human vs synthetic noise, confusion matrices | `python src/analyze_c10n.py` | `results/stage5_vs_synthetic.*`, `results/stage5_confusion.png` |
 | 5. Methods on worse | `python src/summarize_methods.py --runs results/runs/stage5/methods --prefix stage5` | `results/stage5_table.csv`, `results/stage5_methods.png`, `results/stage5_curves.png` |
-| 5. Filtering on worse | `python src/analyze_filtering.py --runs results/runs/stage5/filter --baseline results/runs/stage5/methods --prefix stage5` | `results/stage5_filtering.png`, `results/stage5_table.csv` |
+| 5. Filtering on worse | `python src/analyze_filtering.py --runs results/runs/stage5/filter --baseline results/runs/stage5/methods --prefix stage5` | `results/stage5_filtering.png`, `results/stage5_filtering_table.csv` |
+
+| 6. CLIP ViT-B/16 embeddings (CIFAR-10 and CIFAR-100, train + test, text prompts) | `python src/embed.py --dataset cifar10` and `python src/embed.py --dataset cifar100` | `results/embeddings/*.npz` (not in git) |
+| 6. Detector evaluation on CIFAR-10 with known noise | `python src/audit.py --emb results/embeddings/cifar10_clip_b16.npz --labels <run>/labels.npz --prefix stage6_cifar10_<noise>` with `<run>` = `results/runs/stage4/source_sym0.4_seed0`, `results/runs/stage4/source_asym0.4_seed0`, `results/runs/stage5/filter/source_c10n-worse_seed0`, `results/runs/stage5/rates/ce_c10n-aggre_seed0` | `results/stage6_cifar10_*_detector_eval.csv`, `*_suspects.png`, `*_scores.npy` |
+| 6. CIFAR-100 audit: suspected label errors and train/test near-duplicates | `python src/audit.py --emb results/embeddings/cifar100_clip_b16.npz --duplicates --prefix stage6_cifar100` | `results/stage6_cifar100_*` |
+| 6. Manual review page | `python src/make_review_page.py`, open `results/stage6_review.html`, export verdicts to `results/stage6_review_verdicts.csv` | review page |
+| 6. Review summary and gallery | `python src/summarize_review.py` | `results/stage6_review_summary.csv`, `results/stage6_review_gallery.png` |
+| 6. Retraining on CLIP-cleaned labels | `bash scripts/stage6_retrain.sh` | `results/runs/stage6/` |
+
+Audit score = mean of (1 − share of the 10 nearest CLIP neighbours sharing the label) and (1 − CLIP zero-shot probability of the label, prompt "a photo of a {class}."). Near-duplicates: nearest train image for every test image by CLIP cosine similarity, plus pixel mean absolute difference.
 
 CIFAR-10N labels are downloaded from the authors' repository (`UCSC-REAL/cifar-10-100n`, `CIFAR-10_human.pt`) into `data/` on first use; their `clean_label` is checked against torchvision labels. Validation uses the same human label set as training for the noisy-validation columns.
 
@@ -53,8 +62,8 @@ Notebook settings: Accelerator `GPU T4` or `GPU P100`, Internet `On`. Optionally
 !rm -rf DL_noise
 !git clone https://github.com/IsaenkovDanil/DL_noise.git
 %cd DL_noise
-!bash scripts/stage5.sh
-!zip -r /kaggle/working/stage5_runs.zip results/runs/stage5 results/runs/stage4/filtered_e10pc_*
+!bash scripts/stage6_retrain.sh
+!zip -r /kaggle/working/stage6_runs.zip results/runs/stage6
 ```
 
 Run with `Save Version → Save & Run All (Commit)` so that results in `/kaggle/working` are kept in the version Output.
@@ -77,6 +86,11 @@ src/analyze_filtering.py  stage 4 analysis and figure
 scripts/stage4.sh    stage 4 filtering and retraining
 src/analyze_c10n.py  stage 5 human vs synthetic noise
 scripts/stage5.sh    stage 5 CIFAR-10N runs
+src/embed.py         CLIP image and text embeddings
+src/audit.py         kNN/CLIP label audit, detector evaluation, near-duplicates
+src/make_review_page.py  self-contained HTML page for manual review
+src/summarize_review.py  manual review results
+scripts/stage6_retrain.sh  retraining on CLIP-cleaned labels
 src/look_at_data.py  dataset overview figure
 src/benchmark.py     speed check
 results/             figures and run logs

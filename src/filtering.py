@@ -6,7 +6,8 @@ import numpy as np
 def load_source(run_dir):
     run_dir = Path(run_dir)
     labels = np.load(run_dir / "labels.npz")
-    losses = np.load(run_dir / "train_losses.npy").astype(np.float32)
+    loss_path = run_dir / "train_losses.npy"
+    losses = np.load(loss_path).astype(np.float32) if loss_path.exists() else None
     is_noisy = labels["y_true"] != labels["y_noisy"]
     return labels, losses, is_noisy
 
@@ -42,9 +43,11 @@ def auc(scores, is_noisy):
     return (ranks[is_noisy].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
 
 
-def keep_mask(run_dir, epoch, drop_frac, oracle=False, per_class=False):
+def keep_mask(run_dir, epoch, drop_frac, oracle=False, per_class=False, scores_path=""):
     labels, losses, is_noisy = load_source(run_dir)
-    if oracle:
+    if scores_path:
+        dropped = drop_by_loss(np.load(scores_path), drop_frac)
+    elif oracle:
         dropped = is_noisy.copy()
     elif per_class:
         dropped = drop_by_loss_per_class(losses[epoch - 1], labels["y_noisy"], drop_frac)
